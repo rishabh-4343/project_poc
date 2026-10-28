@@ -58,6 +58,24 @@ export type Session = {
 // Pushed on /hubs/ui as SessionUpdated; merged into a Session by id.
 export type SessionUpdate = Pick<Session, "id" | "serverId" | "state" | "failureReason" | "activeAt" | "stoppedAt" | "stoppedBy">;
 
+// A user's content views of one path within one hour, as merged by the agent.
+export type ContentView = {
+  serverId: string;
+  bucketStart: string;
+  firstAt: string;
+  lastAt: string;
+  readCount: number;
+  objectType: string;
+  path: string;
+  actorSid: string;
+  actorName: string | null;
+  clientIp: string | null;
+  processName: string | null;
+  success: boolean;
+  contentType: string;
+  riskLevel: number;
+};
+
 export type ActionRow = {
   serverId: string;
   seq: number;
@@ -81,6 +99,18 @@ export type ActionRow = {
 };
 
 export type ActionPage = { items: ActionRow[]; nextCursor: string | null };
+
+// captured: whether any event of this kind was ever recorded (false means "not being captured yet").
+export type ContentViewReport = { items: ContentView[]; captured: boolean };
+export type ReportPage = ActionPage & { captured: boolean };
+
+// The action filter of a predefined report.
+export type ReportActionFilter = {
+  operations: string[];
+  success?: boolean;
+  objectTypes?: string[];
+  scope?: "shares" | "longPaths";
+};
 
 export type ActionFilters = {
   operation?: string;

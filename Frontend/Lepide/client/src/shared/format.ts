@@ -6,6 +6,12 @@ export function formatClock(iso: string) {
   return time.format(new Date(iso));
 }
 
+const day = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
+
+export function formatDay(iso: string) {
+  return day.format(new Date(iso));
+}
+
 export function formatDateTime(iso: string | null | undefined) {
   return iso ? dateTime.format(new Date(iso)) : "—";
 }

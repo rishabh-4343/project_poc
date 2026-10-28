@@ -21,7 +21,7 @@ The API key is never committed: register the server in the backend (`POST /api/s
 | `DataDirectory` | `%ProgramData%\Auditor\Agent` | `state/` (key + seq), `outbox/`, `logs/`. |
 | `BatchMaxActions`, `BatchMaxMs` | 1000, 2000 | Batch cut. Max 10000 (backend limit). |
 | `OutboxMaxMegabytes` | 2048 | Cap; over it, batches are dropped and a `Gap` event is sent. |
-| `DriverSource` | `Simulated` | Only source implemented. |
+| `DriverSource` | `Simulated` | `Simulated` or `Real` (connects to the kernel driver port). |
 | `SimulatedIntervalMs` | 500 | Rate of the simulated driver. |
 | `ModifyMergeSeconds` | 5 | Window for merging repeated writes. |
 | `HeartbeatSeconds` | 30 | |
@@ -43,7 +43,7 @@ Hosted services are registered so shutdown flows driver, correlator, batcher: a 
 
 ## Not done / open
 
-1. **No real driver source.** Needs the WDK driver and the D2 scope message; `IDriverSource` and `IDriverControl` are the seams. Nothing here was run against a real driver.
+1. **Real driver source (`DriverSource=Real`) is written but unrun.** `RealDriverSource`, `RealDriverControl`, `DriverConnection`, `NtPathMap` and `DriverProtocol` connect to the minifilter port (`\\AuditorDriverPort`), send SET_SCOPE, read records, translate NT↔drive-letter paths, and handle the overflow notice. They have never run against the live driver — first execution is VM test D4. The `Simulated` path is the default and is unaffected.
 2. **Copy inference** (optional in A3) is not built. The Correlator also does not recognise a delete-on-close from the driver (it only merges repeated `Deleted`).
 3. **Events held in the Correlator (up to `ModifyMergeSeconds`) are lost on a hard crash**; the driver ring is memory-only, so they cannot be replayed. `SafeSeq` is exposed but nothing checkpoints on it yet.
 4. **`UpdateScope`, `Ping`** are not handled: the backend does not send them. `UpdateShares` is handled and fills `shareName`.

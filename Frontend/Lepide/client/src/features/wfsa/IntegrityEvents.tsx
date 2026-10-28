@@ -4,11 +4,11 @@ import { Badge, type BadgeTone } from "@/shared/ui/badge";
 import type { IntegrityEvent, IntegrityKind } from "./types";
 
 const KINDS: Record<IntegrityKind, { label: string; tone: BadgeTone }> = {
-  DriverOverflow: { label: "Driver overflow", tone: "danger" },
-  Gap: { label: "Gap in coverage", tone: "danger" },
-  GapRecovered: { label: "Gap recovered", tone: "success" },
+  DriverOverflow: { label: "Events dropped (too busy)", tone: "danger" },
+  Gap: { label: "Events not recorded", tone: "danger" },
+  GapRecovered: { label: "Recording resumed", tone: "success" },
   AgentOffline: { label: "Agent offline", tone: "warning" },
-  DriverUnloaded: { label: "Driver unloaded", tone: "danger" },
+  DriverUnloaded: { label: "Recording component stopped", tone: "danger" },
   TamperSuspected: { label: "Tampering suspected", tone: "danger" },
 };
 
@@ -17,13 +17,13 @@ function describe(e: IntegrityEvent) {
   const parts: string[] = [];
   try {
     const d = e.details ? (JSON.parse(e.details) as { droppedCount?: number | null; message?: string | null }) : null;
-    if (d?.droppedCount) parts.push(`${d.droppedCount.toLocaleString()} dropped`);
+    if (d?.droppedCount) parts.push(`${d.droppedCount.toLocaleString()} events dropped`);
     if (d?.message) parts.push(d.message);
   } catch {
     // Not JSON: show nothing rather than raw text.
   }
   if (e.firstSeq !== null) {
-    parts.push(e.lastSeq !== null ? `seq ${e.firstSeq}-${e.lastSeq}` : `from seq ${e.firstSeq}`);
+    parts.push(e.lastSeq !== null ? `events ${e.firstSeq}–${e.lastSeq}` : `from event ${e.firstSeq}`);
   }
   return parts.join(" · ");
 }

@@ -50,12 +50,16 @@ public sealed class CommandService(
 
     private TimeSpan Ttl => TimeSpan.FromSeconds(configuration.GetValue("Wfsa:CommandTtlSeconds", 120));
 
+    // The agent (and the driver behind it) only watch the listed operations, so "include reads" must add them to the list.
+    private static readonly Operation[] ReadOperations = [Operation.Read, Operation.ContentView];
+
     // The session must already be tracked by the context so both rows are saved in one transaction.
     public async Task IssueAsync(SessionRecord session, string type, CancellationToken ct)
     {
         object payload = type == CommandTypes.StartScope
             ? new StartScopePayload(
-                session.Id, session.ServerId, session.Operations, session.IncludeReads,
+                session.Id, session.ServerId,
+                session.IncludeReads ? session.Operations.Union(ReadOperations).ToList() : session.Operations, session.IncludeReads,
                 session.Folders.Select(f => new ScopeFolder(f.LocalPath, f.Recursive, f.ShareId)).ToList(), session.MaxEndAt)
             : new StopScopePayload(session.Id);
 

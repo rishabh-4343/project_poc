@@ -11,7 +11,7 @@ export default function OverviewPage() {
   return (
     <div className="flex flex-col gap-8">
       <Reveal>
-        <PageHeader title="Overview" description="Status of the Auditor platform and the modules installed on it." />
+        <PageHeader title="Overview" description="Service status and the auditing modules available to you." />
       </Reveal>
 
       <Reveal index={1}>
@@ -24,7 +24,7 @@ export default function OverviewPage() {
           <EmptyState
             icon={Boxes}
             title="No modules registered"
-            description="Modules appear here and in the sidebar once they add an entry to the nav registry."
+            description="No auditing modules are installed yet."
           />
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">

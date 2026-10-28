@@ -18,12 +18,12 @@ export function EmptyState({ icon: Icon, title, description, action, className }
         className,
       )}
     >
-      <div className="flex size-11 items-center justify-center rounded-lg bg-accent-soft text-accent">
+      <div className="flex size-11 items-center justify-center rounded-lg bg-surface-2 text-fg-muted">
         <Icon className="size-5" aria-hidden />
       </div>
       <div className="flex flex-col gap-1">
         <p className="text-base font-semibold">{title}</p>
-        {description ? <p className="max-w-sm text-sm text-fg-muted">{description}</p> : null}
+        {description ? <p className="max-w-md text-sm text-fg-secondary">{description}</p> : null}
       </div>
       {action}
     </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "motion/react";
+import { cn } from "../cn";
 
 // Pulsing dot with a tiny spring, per the UI spec's only allowed spring.
 export function LiveIndicator({ label = "Recording" }: { label?: string }) {
@@ -18,6 +19,19 @@ export function LiveIndicator({ label = "Recording" }: { label?: string }) {
         )}
         <span className="relative inline-flex size-2.5 rounded-full bg-danger" />
       </span>
+      {label}
+    </span>
+  );
+}
+
+// The not-recording counterpart: a still dot, so a paused or degraded session never looks live.
+export function PausedIndicator({ label, tone = "warning", title }: { label: string; tone?: "warning" | "muted"; title?: string }) {
+  return (
+    <span
+      className={cn("inline-flex items-center gap-2 text-sm font-medium", tone === "warning" ? "text-warning" : "text-fg-muted")}
+      title={title}
+    >
+      <span className={cn("inline-flex size-2.5 rounded-full", tone === "warning" ? "bg-warning" : "bg-fg-muted")} aria-hidden />
       {label}
     </span>
   );

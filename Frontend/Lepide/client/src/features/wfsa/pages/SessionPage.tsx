@@ -8,13 +8,15 @@ import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Dialog, DialogClose, DialogContent } from "@/shared/ui/dialog";
 import { Input, Select } from "@/shared/ui/input";
-import { LiveIndicator } from "@/shared/ui/live-indicator";
+import { LiveIndicator, PausedIndicator } from "@/shared/ui/live-indicator";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { StatusBadge } from "@/shared/ui/status-badge";
 import { ActionsTable } from "../ActionsTable";
+import { ContentViews } from "../ContentViews";
+import { operationName } from "../operations";
 import { IntegrityEvents } from "../IntegrityEvents";
 import { wfsaApi } from "../api";
-import { useServers, useSession, useSessionIntegrity, useStopSession } from "../hooks";
+import { useAgents, useServers, useSession, useSessionIntegrity, useStopSession } from "../hooks";
 import { useSessionStream } from "../useSessionStream";
 import { STOPPABLE, type ActionFilters } from "../types";
 
@@ -31,6 +33,7 @@ export function SessionPageSkeleton() {
 export function SessionPage({ id }: { id: string }) {
   const session = useSession(id);
   const servers = useServers();
+  const agents = useAgents();
   const stop = useStopSession();
   const integrity = useSessionIntegrity(id);
 
@@ -39,6 +42,7 @@ export function SessionPage({ id }: { id: string }) {
   const [actorInput, setActorInput] = useState("");
   const [actor, setActor] = useState("");
   const [confirmStop, setConfirmStop] = useState(false);
+  const [showAllGaps, setShowAllGaps] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
@@ -74,6 +78,8 @@ export function SessionPage({ id }: { id: string }) {
 
   const s = session.data;
   const recording = s.state === "Active" || s.state === "Degraded";
+  // Unknown while the agents list loads; only a confirmed offline agent pauses the header.
+  const agentOnline = agents.data?.find((a) => a.id === s.agentId)?.online;
 
   async function exportCsv() {
     setExporting(true);
@@ -90,17 +96,27 @@ export function SessionPage({ id }: { id: string }) {
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
         <Button variant="ghost" size="sm" asChild className="-ml-3 self-start">
-          <Link href="/wfsa/sessions"><ArrowLeft aria-hidden />Sessions</Link>
+          <Link href="/wfsa/sessions"><ArrowLeft aria-hidden />Audits</Link>
         </Button>
 
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-[22px] font-semibold leading-tight tracking-tight">{s.name || "Untitled session"}</h1>
+              <h1 className="text-[22px] font-semibold leading-tight tracking-tight">{s.name || "Untitled audit"}</h1>
               <StatusBadge kind="session" value={s.state} />
-              {recording ? (stream.connected ? <LiveIndicator /> : <span className="text-sm text-fg-muted">Connecting to live feed…</span>) : null}
+              {s.state === "Stopping" ? (
+                <PausedIndicator label="Not recording" tone="muted" title="Waiting for the agent to confirm the stop." />
+              ) : s.state === "Degraded" ? (
+                <PausedIndicator label="Recording not confirmed" title="The agent reconnected but could not confirm it is still watching these folders." />
+              ) : s.state !== "Active" ? null : agentOnline === false ? (
+                <PausedIndicator label="Paused · agent offline" title="Nothing is recorded until the agent reconnects." />
+              ) : stream.connected ? (
+                <LiveIndicator />
+              ) : (
+                <span className="text-sm text-fg-muted">Connecting to live feed…</span>
+              )}
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-fg-secondary">
               <span>{serverNames.get(s.serverId) ?? "Server"}</span>
               <span aria-hidden>·</span>
               {s.folders.map((f) => (
@@ -108,9 +124,13 @@ export function SessionPage({ id }: { id: string }) {
               ))}
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {s.operations.map((op) => <StatusBadge key={op} kind="operation" value={op} />)}
-              {s.includeReads ? <Badge tone="info">Content views</Badge> : null}
+              {s.operations.map((op) => <StatusBadge key={op} kind="operation" value={op} label={operationName(op)} />)}
+              {s.includeReads ? <Badge tone="info">File reads</Badge> : null}
             </div>
+            <p className="max-w-3xl text-sm text-fg-secondary">
+              This is the audit&apos;s report: every recorded event, newest first. Filter it below or export it as CSV.{" "}
+              For views across all servers, see <Link href="/wfsa/reports" className="font-medium text-accent-text underline-offset-2 hover:underline">Reports</Link>.
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -137,24 +157,34 @@ export function SessionPage({ id }: { id: string }) {
         <div className="rounded-md border border-warning/40 bg-warning-soft px-4 py-2" role="status">
           <p className="flex items-center gap-2 text-sm font-medium text-warning">
             <AlertTriangle className="size-4 shrink-0" aria-hidden />
-            This record may be incomplete for part of the session
+            Some activity during this audit may not have been recorded
           </p>
-          <IntegrityEvents events={integrity.data} showServer={false} />
+          {/* The latest two gaps; the rest on request, so a long outage history does not push the report off screen. */}
+          <IntegrityEvents events={showAllGaps ? integrity.data : integrity.data.slice(0, 2)} showServer={false} />
+          {integrity.data.length > 2 ? (
+            <button
+              type="button"
+              onClick={() => setShowAllGaps((v) => !v)}
+              className="pb-1 text-sm font-medium text-warning underline-offset-2 hover:underline"
+            >
+              {showAllGaps ? "Show fewer" : `Show all ${integrity.data.length}`}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Select value={operation} onChange={(e) => setOperation(e.target.value)} className="w-44" aria-label="Operation">
-          <option value="">All operations</option>
-          {s.operations.map((op) => <option key={op} value={op}>{op}</option>)}
+        <Select value={operation} onChange={(e) => setOperation(e.target.value)} className="w-64" aria-label="Event">
+          <option value="">All events</option>
+          {s.operations.map((op) => <option key={op} value={op}>{operationName(op)}</option>)}
         </Select>
-        <Select value={access} onChange={(e) => setAccess(e.target.value)} className="w-40" aria-label="Access result">
+        <Select value={access} onChange={(e) => setAccess(e.target.value)} className="w-48" aria-label="Result">
           <option value="">Allowed and denied</option>
-          <option value="allowed">Allowed</option>
-          <option value="denied">Denied</option>
+          <option value="allowed">Allowed only</option>
+          <option value="denied">Denied only</option>
         </Select>
         <Input value={actorInput} onChange={(e) => setActorInput(e.target.value)} placeholder="Filter by user…" className="w-56" aria-label="User" />
-        <span className="ml-auto text-sm tabular-nums text-fg-muted">{stream.rows.length.toLocaleString()} shown</span>
+        <span className="ml-auto text-sm tabular-nums text-fg-secondary">{stream.rows.length.toLocaleString()} shown</span>
       </div>
 
       {stream.isError ? (
@@ -172,8 +202,10 @@ export function SessionPage({ id }: { id: string }) {
         />
       )}
 
+      {s.includeReads ? <ContentViews sessionId={id} recording={recording} /> : null}
+
       <Dialog open={confirmStop} onOpenChange={setConfirmStop}>
-        <DialogContent title="Stop this session?" description="The agent stops watching these folders. Recorded activity stays available.">
+        <DialogContent title="Stop this audit?" description="These folders stop being watched. Everything recorded so far stays in the report.">
           <div className="flex justify-end gap-2">
             <DialogClose asChild><Button variant="secondary">Keep recording</Button></DialogClose>
             <Button
@@ -181,7 +213,7 @@ export function SessionPage({ id }: { id: string }) {
               disabled={stop.isPending}
               onClick={() => stop.mutate(id, { onSuccess: () => setConfirmStop(false) })}
             >
-              Stop session
+              Stop audit
             </Button>
           </div>
         </DialogContent>

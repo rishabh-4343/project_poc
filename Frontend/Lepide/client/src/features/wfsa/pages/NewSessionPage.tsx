@@ -14,6 +14,7 @@ import { PageHeader } from "@/shared/ui/page-header";
 import { Reveal } from "@/shared/ui/reveal";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { useAgents, useCreateSession, useServers, useShares } from "../hooks";
+import { operationName } from "../operations";
 import { DEFAULT_OPERATIONS, OPERATION_GROUPS } from "../types";
 
 type FolderDraft = { localPath: string; shareId?: string; recursive: boolean };
@@ -57,7 +58,7 @@ export function NewSessionPage() {
     : folders.length === 0
       ? "Add at least one folder to watch."
       : operations.size === 0
-        ? "Tick at least one operation."
+        ? "Tick at least one kind of event to record."
         : null;
 
   function start() {
@@ -71,7 +72,7 @@ export function NewSessionPage() {
       },
       {
         onSuccess: (s) => {
-          toast.success("Session requested");
+          toast.success("Audit started");
           router.push(`/wfsa/sessions/${s.id}`);
         },
       },
@@ -81,7 +82,7 @@ export function NewSessionPage() {
   return (
     <div className="flex max-w-3xl flex-col gap-8">
       <Reveal>
-        <PageHeader title="New session" description="Pick a server, the folders to watch, and which operations to record." />
+        <PageHeader title="New audit" description="Pick a server, the folders to watch, and what to record. You can watch the report fill in as soon as you start." />
       </Reveal>
 
       <Reveal index={1}>
@@ -141,7 +142,7 @@ export function NewSessionPage() {
 
             {serverShares.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-fg-muted">Shares:</span>
+                <span className="text-sm text-fg-secondary">Add a share:</span>
                 {serverShares.map((s) => (
                   <Button key={s.id} size="sm" variant="secondary" disabled={hasFolder(s.localPath)} onClick={() => addFolder(s.localPath, s.id)}>
                     {s.name}
@@ -174,8 +175,8 @@ export function NewSessionPage() {
       <Reveal index={3}>
         <Card>
           <CardHeader>
-            <CardTitle>3. Operations</CardTitle>
-            <CardDescription>What to record inside those folders.</CardDescription>
+            <CardTitle>3. What to record</CardTitle>
+            <CardDescription>The kinds of file and folder events to keep for those folders.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             {OPERATION_GROUPS.map((g) => (
@@ -185,7 +186,7 @@ export function NewSessionPage() {
                   {g.operations.map((op) => (
                     <label key={op} className="flex items-center gap-2 text-sm">
                       <Checkbox checked={operations.has(op)} onChange={() => toggleOperation(op)} />
-                      {op.replace(/([a-z])([A-Z])/g, "$1 $2")}
+                      {operationName(op)}
                     </label>
                   ))}
                 </div>
@@ -199,8 +200,8 @@ export function NewSessionPage() {
               <label className="flex items-start gap-2 text-sm">
                 <Checkbox className="mt-0.5" checked={includeReads} onChange={(e) => setIncludeReads(e.target.checked)} />
                 <span>
-                  Include content views (file reads)
-                  <span className="block text-xs text-fg-muted">Merged to one entry per user, file and hour, but still much more data. Off by default.</span>
+                  Include file reads
+                  <span className="block text-xs text-fg-muted">Who opened which file, grouped to one entry per user, file and hour. Produces much more data, so it is off by default.</span>
                 </span>
               </label>
             </fieldset>
@@ -209,7 +210,7 @@ export function NewSessionPage() {
       </Reveal>
 
       <Reveal index={4} className="flex flex-col gap-4">
-        <Field label="Session name" hint="Optional, shown in the sessions list.">
+        <Field label="Audit name" hint="Optional. Shown in the list of audits.">
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Finance share audit" />
         </Field>
 
@@ -224,7 +225,7 @@ export function NewSessionPage() {
 
         <div className="flex gap-2">
           <Button onClick={start} disabled={problem !== null || create.isPending}>
-            {create.isPending ? "Starting…" : "Start session"}
+            {create.isPending ? "Starting…" : "Start audit"}
           </Button>
           <Button variant="secondary" onClick={() => router.push("/wfsa/sessions")}>Cancel</Button>
         </div>

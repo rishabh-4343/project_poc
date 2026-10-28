@@ -1,7 +1,8 @@
 /* capture.c — D3/D4: the operation callbacks. Each one does the least it can: reject by scope and operation mask first
  * (so unwatched files cost almost nothing), then resolve the NT path, capture the actor, and hand one record to emit.c.
  *
- *   Create        PostCreate           Created, Open, Modified (overwrite), and the denied variants; arms delete-on-close
+ *   Create        PostCreate           Created, Open, Modified (overwrite), and the denied variants; arms delete-on-close.
+ *                                      An Open with read access becomes Content View when reads are in scope (agent merges the volume).
  *   SetInfo       PreSetInfo/Post      Renamed/Moved (old and new path, built before the rename, status patched after),
  *                                      delete requests (a flag on the handle, confirmed at cleanup)
  *   SetSecurity   PreSetSecurity/Post  OwnerChange, PermissionChange, AuditingChange (one record per part of the descriptor)
@@ -137,6 +138,25 @@ static UINT8 ObjectTypeOf(_In_ PCFLT_RELATED_OBJECTS objects, BOOLEAN fallbackIs
     return fallbackIsFolder ? (UINT8)OBJ_FOLDER : (UINT8)OBJ_FILE;
 }
 
+/* Read-data access on this open (for a folder, list-directory: they share the FILE_READ_DATA bit). The granted access
+ * is used on a successful open, the requested access on a denied one. */
+static BOOLEAN ReadDataAccess(_In_ PFLT_CALLBACK_DATA data, BOOLEAN denied)
+{
+    PIO_SECURITY_CONTEXT sec = data->Iopb->Parameters.Create.SecurityContext;
+    ACCESS_MASK access = 0;
+
+    if (sec == NULL) {
+        return FALSE;
+    }
+    if (!denied && sec->AccessState != NULL) {
+        access = sec->AccessState->PreviouslyGrantedAccess;   /* generic rights already mapped to specific ones */
+    }
+    if (access == 0) {
+        access = sec->DesiredAccess;
+    }
+    return (access & FILE_READ_DATA) != 0;
+}
+
 /* The last path component is dropped on both names; equal parents mean a rename, different parents a move. */
 static BOOLEAN SameParent(_In_ const UNICODE_STRING* a, _In_ const UNICODE_STRING* b)
 {
@@ -229,6 +249,12 @@ static FLT_POSTOP_CALLBACK_STATUS PostCreateSafe(
         case FILE_SUPERSEDED:   operation = (UINT8)OP_MODIFIED; break;
         default:                operation = (UINT8)OP_OPEN;     break;
         }
+    }
+
+    /* An existing file or folder opened with read access is a content view when reads are in scope: this one record
+     * per open stands in for the plain Open, and the agent merges repeats per user, file and hour to tame read volume. */
+    if (operation == (UINT8)OP_OPEN && ScopeStateAllows(AUDIT_OP_BIT(OP_CONTENT_VIEW)) && ReadDataAccess(Data, denied)) {
+        operation = (UINT8)OP_CONTENT_VIEW;
     }
 
     /* A denied attempt is always worth reporting once anything is being audited; the agent filters by session. */

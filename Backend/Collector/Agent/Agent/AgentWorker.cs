@@ -2,7 +2,7 @@ using Microsoft.Extensions.Options;
 
 namespace Auditor.Agent;
 
-// Placeholder host loop; later tasks add the driver reader, pipeline and uploader as their own services.
+// Logs the identity and configuration problems at start and stop; the pipeline runs in its own hosted services.
 public sealed class AgentWorker(IOptions<AgentOptions> options, ILogger<AgentWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

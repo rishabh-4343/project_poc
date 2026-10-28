@@ -14,8 +14,38 @@ type DataTableProps<T> = {
   onRowClick?: (row: T) => void;
 };
 
+// TanStack Table reads the current time in development, which Cache Components rejects during prerender unless
+// it sits behind Suspense; the fallback is the same skeleton the table shows while loading.
+export function DataTable<T>(props: DataTableProps<T>) {
+  return (
+    <React.Suspense fallback={<TableSkeleton columns={props.columns.length} />}>
+      <DataTableInner {...props} />
+    </React.Suspense>
+  );
+}
+
+function TableSkeleton({ columns }: { columns: number }) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border bg-surface shadow-card">
+      <table className="w-full border-collapse text-sm">
+        <tbody>
+          {Array.from({ length: 4 }, (_, i) => (
+            <tr key={i} className="border-b border-border last:border-0">
+              {Array.from({ length: columns }, (_, c) => (
+                <td key={c} className="px-4 py-3">
+                  <Skeleton className="h-4 w-full max-w-40" />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // Sticky header, hover rows, skeleton and empty states; used by every list screen.
-export function DataTable<T>({ columns, data, getRowId, loading, empty, onRowClick }: DataTableProps<T>) {
+function DataTableInner<T>({ columns, data, getRowId, loading, empty, onRowClick }: DataTableProps<T>) {
   const table = useReactTable({ columns, data, getRowId, getCoreRowModel: getCoreRowModel() });
 
   if (!loading && data.length === 0 && empty) {

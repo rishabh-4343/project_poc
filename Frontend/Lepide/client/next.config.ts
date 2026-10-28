@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   experimental: {
     agentFeedback: true,
   },
+  // Keep the dev-only indicator off the sidebar footer.
+  devIndicators: { position: "bottom-right" },
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

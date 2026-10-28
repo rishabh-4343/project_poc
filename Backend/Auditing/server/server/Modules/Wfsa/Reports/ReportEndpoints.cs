@@ -10,6 +10,7 @@ using server.Modules.Wfsa.Data;
 namespace server.Modules.Wfsa.Reports;
 
 public sealed record ActionPage(List<ActionRow> Items, string? NextCursor);
+public sealed record ReportPage(List<ActionRow> Items, string? NextCursor, bool Captured);
 public sealed record DayCount(string Day, ulong Actions, ulong Denied);
 public sealed record OperationCount(string Operation, ulong Actions);
 public sealed record ActorCount(string ActorSid, ulong Actions);
@@ -23,6 +24,7 @@ public sealed record IntegrityEventDto(
 public static class ReportEndpoints
 {
     private const int MaxPage = 200;
+    private const int MaxContentViews = 500;
 
     public static void MapReportEndpoints(this IEndpointRouteBuilder group)
     {
@@ -36,6 +38,17 @@ public static class ReportEndpoints
             .Produces<string>(StatusCodes.Status200OK, contentType: "text/csv")
             .Produces<ApiError>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
+        group.MapGet("/sessions/{id:guid}/reads", GetContentViews)
+            .WithTags("Reports")
+            .Produces<ContentViewReport>()
+            .Produces(StatusCodes.Status404NotFound);
+        group.MapGet("/reports/actions", GetReportActions)
+            .WithTags("Reports")
+            .Produces<ReportPage>()
+            .Produces<ApiError>(StatusCodes.Status400BadRequest);
+        group.MapGet("/reports/reads", GetReportReads)
+            .WithTags("Reports")
+            .Produces<ContentViewReport>();
         group.MapGet("/sessions/{id:guid}/integrity-events", GetSessionIntegrity)
             .WithTags("Reports")
             .Produces<List<IntegrityEventDto>>()
@@ -101,6 +114,149 @@ public static class ReportEndpoints
         }
 
         return Results.Ok(new ActionPage(rows, next));
+    }
+
+    // Content views are merged per user, path and hour, so they are listed apart from actions (no seq, a count instead).
+    // Newest first, capped; empty when the session did not ask for reads.
+    private static async Task<IResult> GetContentViews(
+        Guid id, int? limit, ICurrentTenant tenant, WfsaDbContext db, ClickHouseConnectionFactory factory, CancellationToken ct)
+    {
+        var (session, _) = await LoadAsync(id, tenant, db, ct);
+        if (session is null)
+        {
+            return Results.NotFound();
+        }
+
+        var rows = new List<ContentViewRow>();
+        if (!session.IncludeReads)
+        {
+            return Results.Ok(new ContentViewReport(rows, false));
+        }
+
+        await using var connection = factory.Create();
+        await connection.OpenAsync(ct);
+        await using (var command = ContentViewQuery.Build(
+            connection, BuildFilter(session, null, null, null, null), Math.Clamp(limit ?? MaxContentViews, 1, MaxContentViews)))
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                rows.Add(ContentViewQuery.ReadRow(reader));
+            }
+        }
+
+        var captured = rows.Count > 0 || await ExistsAsync(ContentViewQuery.BuildCaptured(connection, tenant.TenantId), ct);
+        return Results.Ok(new ContentViewReport(rows, captured));
+    }
+
+    // A predefined report over all captured actions of the tenant. Filters: operations (required), success, object
+    // types, scope ("shares" or "longPaths"), and the last N days. Keyset paging newest first; Captured says whether any
+    // action with these operations was ever stored, so the UI can tell "not captured yet" from "nothing in this period".
+    private static async Task<IResult> GetReportActions(
+        string[]? operation, bool? success, string[]? objectType, string? scope, int? days, string? before, int? limit,
+        ICurrentTenant tenant, ClickHouseConnectionFactory factory, CancellationToken ct)
+    {
+        var ops = ParseOperations(operation, out var badOperation);
+        if (badOperation is not null)
+        {
+            return Results.BadRequest(new { error = $"Unknown operation '{badOperation}'." });
+        }
+
+        if (ops is not { Count: > 0 })
+        {
+            return Results.BadRequest(new { error = "At least one operation is required." });
+        }
+
+        var types = (objectType ?? []).SelectMany(v => v.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).ToList();
+        var badType = types.FirstOrDefault(t => t is not ("File" or "Folder" or "Share"));
+        if (badType is not null)
+        {
+            return Results.BadRequest(new { error = $"Unknown object type '{badType}'." });
+        }
+
+        if (scope is not (null or "" or "shares" or "longPaths"))
+        {
+            return Results.BadRequest(new { error = "scope must be 'shares' or 'longPaths'." });
+        }
+
+        (long, ulong, Guid)? cursor = null;
+        if (!string.IsNullOrEmpty(before))
+        {
+            var parts = before.Split('-', 3);
+            if (parts.Length != 3 || !long.TryParse(parts[0], out var ms) || !ulong.TryParse(parts[1], out var seq)
+                || !Guid.TryParse(parts[2], out var server))
+            {
+                return Results.BadRequest(new { error = "before must look like '<ms>-<seq>-<serverId>'." });
+            }
+
+            cursor = (ms, seq, server);
+        }
+
+        var names = ops.Select(o => o.ToString()).Distinct().ToList();
+        var filter = new ReportFilter
+        {
+            TenantId = tenant.TenantId,
+            From = DateTimeOffset.UtcNow.AddDays(-Math.Clamp(days ?? 7, 1, 365)),
+            Operations = names,
+            Success = success,
+            ObjectTypes = types,
+            SharesOnly = scope == "shares",
+            LongPathsOnly = scope == "longPaths",
+        };
+        var pageSize = Math.Clamp(limit ?? MaxPage, 1, MaxPage);
+
+        await using var connection = factory.Create();
+        await connection.OpenAsync(ct);
+        var rows = new List<ActionRow>();
+        await using (var command = ReportQuery.Build(connection, filter, cursor, pageSize + 1))
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                rows.Add(ActionQuery.ReadRow(reader));
+            }
+        }
+
+        string? next = null;
+        if (rows.Count > pageSize)
+        {
+            rows.RemoveAt(rows.Count - 1);
+            var last = rows[^1];
+            next = $"{last.OccurredAt.ToUnixTimeMilliseconds()}-{last.Seq}-{last.ServerId}";
+        }
+
+        var captured = rows.Count > 0 || await ExistsAsync(ReportQuery.BuildCaptured(connection, tenant.TenantId, names), ct);
+        return Results.Ok(new ReportPage(rows, next, captured));
+    }
+
+    // Merged file reads of the tenant (the read reports), optionally only allowed or only denied ones, newest first.
+    private static async Task<IResult> GetReportReads(
+        bool? success, int? days, int? limit, ICurrentTenant tenant, ClickHouseConnectionFactory factory, CancellationToken ct)
+    {
+        await using var connection = factory.Create();
+        await connection.OpenAsync(ct);
+        var rows = new List<ContentViewRow>();
+        var from = DateTimeOffset.UtcNow.AddDays(-Math.Clamp(days ?? 7, 1, 365));
+        await using (var command = ContentViewQuery.BuildForTenant(
+            connection, tenant.TenantId, from, success, Math.Clamp(limit ?? MaxContentViews, 1, MaxContentViews)))
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                rows.Add(ContentViewQuery.ReadRow(reader));
+            }
+        }
+
+        var captured = rows.Count > 0 || await ExistsAsync(ContentViewQuery.BuildCaptured(connection, tenant.TenantId), ct);
+        return Results.Ok(new ContentViewReport(rows, captured));
+    }
+
+    private static async Task<bool> ExistsAsync(ClickHouse.Client.ADO.ClickHouseCommand command, CancellationToken ct)
+    {
+        await using (command)
+        {
+            return await command.ExecuteScalarAsync(ct) is not null;
+        }
     }
 
     private static async Task<IResult> ExportCsv(

@@ -18,12 +18,23 @@ if (!string.IsNullOrWhiteSpace(agent.DataDirectory))
     builder.Logging.AddProvider(new FileLoggerProvider(Path.Combine(agent.ResolvedDataDirectory, "logs"), agent.LogRetentionDays));
 }
 
-if (!string.Equals(agent.DriverSource, "Simulated", StringComparison.OrdinalIgnoreCase))
+switch (agent.DriverSource?.Trim().ToLowerInvariant())
 {
-    throw new InvalidOperationException($"Driver source '{agent.DriverSource}' is not implemented; use Simulated.");
+    case "real":
+        // Connect to the kernel minifilter's communication port. RealDriverSource and
+        // RealDriverControl share one DriverConnection (the port allows a single client).
+        builder.Services.AddSingleton<NtPathMap>();
+        builder.Services.AddSingleton<DriverConnection>();
+        builder.Services.AddSingleton<IDriverSource, RealDriverSource>();
+        builder.Services.AddSingleton<IDriverControl, RealDriverControl>();
+        break;
+    case "simulated" or null or "":
+        builder.Services.AddSingleton<IDriverSource, SimulatedDriverSource>();
+        builder.Services.AddSingleton<IDriverControl, LoggingDriverControl>();
+        break;
+    default:
+        throw new InvalidOperationException($"Unknown Agent:DriverSource '{agent.DriverSource}'. Use 'Simulated' or 'Real'.");
 }
-
-builder.Services.AddSingleton<IDriverSource, SimulatedDriverSource>();
 var dataDir = agent.ResolvedDataDirectory;
 var crypto = new LocalCrypto(Path.Combine(dataDir, "state"));
 builder.Services.AddSingleton(crypto);
@@ -37,7 +48,6 @@ builder.Services.AddSingleton<IProcessNameResolver, ProcessNameResolver>();
 builder.Services.AddSingleton<ShareMap>();
 builder.Services.AddSingleton<Enricher>();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<IDriverControl, LoggingDriverControl>();
 builder.Services.AddSingleton<ScopeManager>();
 builder.Services.AddSingleton<Router>();
 builder.Services.AddSingleton<AgentStats>();

@@ -4,21 +4,25 @@ import { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { ChevronRight, PanelLeft } from "lucide-react";
 import { getSession } from "../auth";
-import { modules } from "../nav";
+import { flattenNav, modules } from "../nav";
 import { useUiStore } from "@/store/ui-store";
 import { Button } from "./button";
+import { AgentsPill } from "./agents-pill";
 import { HealthPill } from "./health-pill";
 import { Skeleton } from "./skeleton";
+import { ThemeToggle } from "./theme-toggle";
+
+const SEGMENT_LABELS: Record<string, string> = { new: "New audit" };
 
 function titleFor(segment: string, href: string) {
-  const entry = modules.find((m) => m.href === href);
+  const entry = modules.find((m) => m.href === href) ?? flattenNav().find((i) => i.href === href);
   if (entry) {
     return entry.label;
   }
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(segment)) {
     return "Details";
   }
-  return segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, " ");
+  return SEGMENT_LABELS[segment] ?? segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, " ");
 }
 
 function Breadcrumb() {
@@ -66,9 +70,11 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-3">
+        <AgentsPill />
         <HealthPill />
+        <ThemeToggle />
         <div
-          className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent"
+          className="flex size-8 items-center justify-center rounded-full bg-surface-2 text-xs font-semibold text-fg-secondary"
           title={`${session.displayName} (${session.email})`}
           aria-label={`Signed in as ${session.displayName}`}
         >

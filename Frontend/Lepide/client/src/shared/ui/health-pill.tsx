@@ -4,7 +4,7 @@ import { useHealth } from "../hooks/use-health";
 import { Badge } from "./badge";
 import { Skeleton } from "./skeleton";
 
-// Reports whether the backend answers /health; the "agents online" pill replaces it once agents are listed.
+// Reports whether the backend answers /health; AgentsPill sits beside it with the online agent count.
 export function HealthPill() {
   const { isPending, isError } = useHealth();
 
@@ -15,12 +15,12 @@ export function HealthPill() {
   return isError ? (
     <Badge tone="danger">
       <span className="size-1.5 rounded-full bg-danger" aria-hidden />
-      API offline
+      Service offline
     </Badge>
   ) : (
     <Badge tone="success">
       <span className="size-1.5 rounded-full bg-success" aria-hidden />
-      API online
+      Service online
     </Badge>
   );
 }

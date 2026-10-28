@@ -1,52 +1,128 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, useReducedMotion } from "motion/react";
-import { Home, ShieldCheck, type LucideIcon } from "lucide-react";
+import { ChevronRight, Home } from "lucide-react";
+import { BRAND_NAME } from "../brand";
 import { cn } from "../cn";
-import { modules } from "../nav";
+import { modules, type NavItem } from "../nav";
 import { useUiStore } from "@/store/ui-store";
 import { Skeleton } from "./skeleton";
-import { ThemeToggle } from "./theme-toggle";
 import { Badge } from "./badge";
 
-const core = [{ label: "Overview", href: "/", icon: Home }];
+const core: NavItem[] = [{ label: "Overview", href: "/", icon: Home }];
 
 function isActive(pathname: string, href: string, exact?: boolean) {
   return exact || href === "/" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function NavLink({
-  href,
-  label,
-  icon: Icon,
-  exact,
-  open,
-}: {
-  href: string;
-  label: string;
-  icon?: LucideIcon;
-  exact?: boolean;
-  open: boolean;
-}) {
-  const active = isActive(usePathname(), href, exact);
+const hasActive = (item: NavItem, pathname: string): boolean =>
+  isActive(pathname, item.href, item.exact) || (item.children ?? []).some((c) => hasActive(c, pathname));
+
+// Neutral active state with a thin primary marker; the primary color is not repeated across the whole row.
+function rowClass(active: boolean) {
+  return cn(
+    "relative flex items-center gap-3 rounded-md px-3 text-sm transition-colors duration-[120ms]",
+    active ? "bg-surface-2 font-semibold text-fg" : "font-medium text-fg-secondary hover:bg-surface-2 hover:text-fg",
+  );
+}
+
+function Marker({ active }: { active: boolean }) {
+  return active ? <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-accent" aria-hidden /> : null;
+}
+
+function Chevron({ open, onClick, label }: { open: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      aria-label={`${open ? "Collapse" : "Expand"} ${label}`}
+      className="flex size-7 shrink-0 items-center justify-center rounded text-fg-muted hover:bg-surface-2 hover:text-fg"
+    >
+      <ChevronRight className={cn("size-4 transition-transform duration-[120ms]", open && "rotate-90")} aria-hidden />
+    </button>
+  );
+}
+
+// Second-level entries: plain links, or a collapsible group of links (e.g. "Permission Reports").
+function TreeNode({ item, pathname }: { item: NavItem; pathname: string }) {
+  const [open, setOpen] = useState(() => hasActive(item, pathname));
+
+  if (!item.children) {
+    const active = pathname === item.href;
+    return (
+      <Link
+        href={item.href}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "block rounded-md px-3 py-1.5 text-[13px] leading-snug transition-colors duration-[120ms]",
+          active ? "bg-surface-2 font-semibold text-fg" : "text-fg-secondary hover:bg-surface-2 hover:text-fg",
+        )}
+      >
+        {item.label}
+      </Link>
+    );
+  }
 
   return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-left text-[13px] font-medium leading-snug text-fg-secondary hover:bg-surface-2 hover:text-fg"
+      >
+        <ChevronRight className={cn("size-3.5 shrink-0 transition-transform duration-[120ms]", open && "rotate-90")} aria-hidden />
+        {item.label}
+      </button>
+      {open ? <SubTree items={item.children} pathname={pathname} /> : null}
+    </div>
+  );
+}
+
+function SubTree({ items, pathname }: { items: NavItem[]; pathname: string }) {
+  return (
+    <div className="ml-[22px] flex flex-col gap-0.5 border-l border-border pl-2">
+      {items.map((child) => <TreeNode key={child.href} item={child} pathname={pathname} />)}
+    </div>
+  );
+}
+
+function NavEntry({ item, open }: { item: NavItem; open: boolean }) {
+  const pathname = usePathname();
+  const active = isActive(pathname, item.href, item.exact);
+  // Branches start expanded so every report is visible from anywhere.
+  const [expanded, setExpanded] = useState(true);
+  const Icon = item.icon;
+
+  const link = (
     <Link
-      href={href}
+      href={item.href}
       aria-current={active ? "page" : undefined}
-      title={open ? undefined : label}
-      className={cn(
-        "relative flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors duration-[120ms]",
-        active ? "bg-accent-soft text-accent" : "text-fg-muted hover:bg-surface-2 hover:text-fg",
-      )}
+      title={open ? undefined : item.label}
+      className={cn(rowClass(active), "h-9 flex-1")}
     >
-      {active ? <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-accent" aria-hidden /> : null}
+      <Marker active={active} />
       {Icon ? <Icon className="size-4 shrink-0" aria-hidden /> : <span className="size-4 shrink-0" aria-hidden />}
-      {open ? <span className="truncate">{label}</span> : <span className="sr-only">{label}</span>}
+      {open ? <span className="truncate">{item.label}</span> : <span className="sr-only">{item.label}</span>}
     </Link>
+  );
+
+  if (!item.children || !open) {
+    return link;
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1">
+        {link}
+        <Chevron open={expanded} onClick={() => setExpanded((e) => !e)} label={item.label} />
+      </div>
+      {expanded ? <SubTree items={item.children} pathname={pathname} /> : null}
+    </div>
   );
 }
 
@@ -67,21 +143,24 @@ export function Sidebar() {
   return (
     <motion.aside
       initial={false}
-      animate={{ width: open ? 240 : 64 }}
+      animate={{ width: open ? 264 : 64 }}
       transition={{ duration: reduced ? 0 : 0.2, ease: "easeInOut" }}
       className="sticky top-0 flex h-dvh shrink-0 flex-col overflow-hidden border-r border-border bg-surface"
     >
-      <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-border px-[18px]">
-        <ShieldCheck className="size-6 shrink-0 text-accent" aria-hidden />
-        {open ? <span className="text-base font-semibold tracking-tight">Auditor</span> : null}
-      </div>
+      <Link href="/" className="flex h-14 shrink-0 items-center border-b border-border px-5" aria-label={`${BRAND_NAME} home`}>
+        {open ? (
+          <span className="truncate text-base font-semibold tracking-tight text-fg">{BRAND_NAME}</span>
+        ) : (
+          <span className="flex size-7 items-center justify-center rounded-md bg-surface-2 text-sm font-semibold text-fg" aria-hidden>
+            {BRAND_NAME.charAt(0)}
+          </span>
+        )}
+      </Link>
 
       <nav aria-label="Main" className="flex flex-1 flex-col gap-6 overflow-y-auto p-3">
         <Suspense fallback={<NavSkeleton />}>
           <div className="flex flex-col gap-1">
-            {core.map((item) => (
-              <NavLink key={item.href} {...item} open={open} />
-            ))}
+            {core.map((item) => <NavEntry key={item.href} item={item} open={open} />)}
           </div>
 
           {modules.map((m) => (
@@ -90,7 +169,7 @@ export function Sidebar() {
                 <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-fg-muted">{m.label}</p>
               ) : null}
               {(m.children ?? [{ label: m.label, href: m.href }]).map((item) => (
-                <NavLink key={item.href} {...item} open={open} />
+                <NavEntry key={item.href} item={item} open={open} />
               ))}
             </div>
           ))}
@@ -100,12 +179,11 @@ export function Sidebar() {
         </Suspense>
       </nav>
 
-      <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border p-3">
-        {open ? (
+      {open ? (
+        <div className="flex shrink-0 items-center border-t border-border p-3">
           <Badge tone="neutral">{process.env.NODE_ENV === "production" ? "Production" : "Development"}</Badge>
-        ) : null}
-        <ThemeToggle />
-      </div>
+        </div>
+      ) : null}
     </motion.aside>
   );
 }
