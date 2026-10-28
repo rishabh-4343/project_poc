@@ -1,0 +1,87 @@
+;
+; AuditorDriver.inf — the wfsa file-audit minifilter. Install with scripts/install.ps1 on a TEST VM only.
+; DriverVer is stamped by scripts/package.ps1 (stampinf), so it is left as a wildcard here.
+;
+[Version]
+Signature   = "$Windows NT$"
+Class       = "ActivityMonitor"                         ;This is determined by the work this filter driver does
+ClassGuid   = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2}    ;This value is determined by the Load Order Group value
+Provider    = %ManufacturerName%
+DriverVer   = 01/01/2000,1.0.0.0
+CatalogFile = AuditorDriver.cat
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir          = 12
+MiniFilter.DriverFiles  = 12            ;%windir%\system32\drivers
+
+[SourceDisksNames]
+1 = %DiskId1%,,,
+
+[SourceDisksFiles]
+AuditorDriver.sys = 1,,
+
+;;
+;; Default install sections
+;;
+[DefaultInstall.NTamd64]
+OptionDesc  = %ServiceDescription%
+CopyFiles   = MiniFilter.DriverFiles
+
+[DefaultInstall.NTamd64.Services]
+AddService  = %ServiceName%,,MiniFilter.Service
+
+;;
+;; Default uninstall sections
+;;
+[DefaultUninstall.NTamd64]
+LegacyUninstall = 1
+DelFiles        = MiniFilter.DriverFiles
+
+[DefaultUninstall.NTamd64.Services]
+DelService = %ServiceName%,0x200        ;Ensure service is stopped before deleting
+
+;;
+;; Services section
+;;
+[MiniFilter.Service]
+DisplayName      = %ServiceName%
+Description      = %ServiceDescription%
+ServiceBinary    = %12%\%DriverName%.sys    ;%windir%\system32\drivers\
+Dependencies     = "FltMgr"
+ServiceType      = 2                        ;SERVICE_FILE_SYSTEM_DRIVER
+StartType        = 3                        ;SERVICE_DEMAND_START
+ErrorControl     = 1                        ;SERVICE_ERROR_NORMAL
+LoadOrderGroup   = "FSFilter Activity Monitor"
+AddReg           = MiniFilter.AddRegistry
+
+;;
+;; Registry modifications
+;;
+[MiniFilter.AddRegistry]
+HKR,,"DebugFlags",0x00010001 ,0x0
+HKR,,"SupportedFeatures",0x00010001,0x3
+HKR,"Instances","DefaultInstance",0x00000000,%DefaultInstance%
+HKR,"Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
+HKR,"Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
+
+;;
+;; Copy files
+;;
+[MiniFilter.DriverFiles]
+%DriverName%.sys
+
+[Strings]
+ManufacturerName        = "wfsa"
+ServiceDescription      = "wfsa file server auditing minifilter"
+ServiceName             = "AuditorDriver"
+DriverName              = "AuditorDriver"
+DiskId1                 = "wfsa AuditorDriver install disk"
+
+;Instances specific information.
+DefaultInstance         = "wfsa Instance"
+Instance1.Name          = "wfsa Instance"
+; PLACEHOLDER altitude inside the Activity Monitor range (360000-389999). A shipping driver must use the altitude
+; Microsoft assigns to the vendor; this one is only for test VMs.
+Instance1.Altitude      = "385250"
+Instance1.Flags         = 0x0           ;Allow all attachments

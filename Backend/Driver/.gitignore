@@ -1,0 +1,8 @@
+/.wdk/
+/build/
+*.sys
+*.pdb
+*.obj
+*.cat
+*.pfx
+*.cer

@@ -1,0 +1,12 @@
+# build output and IDE state
+bin/
+obj/
+.vs/
+*.csproj.user
+
+# secrets and local env
+.env
+.env.local
+
+# local dev stack state
+.dev/
