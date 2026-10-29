@@ -24,7 +24,7 @@ const hasActive = (item: NavItem, pathname: string): boolean =>
 // Neutral active state with a thin primary marker; the primary color is not repeated across the whole row.
 function rowClass(active: boolean) {
   return cn(
-    "relative flex items-center gap-3 rounded-md px-3 text-sm transition-colors duration-[120ms]",
+    "relative flex items-center gap-3 rounded-lg px-3.5 text-sm transition-colors duration-150",
     active ? "bg-surface-2 font-semibold text-fg" : "font-medium text-fg-secondary hover:bg-surface-2 hover:text-fg",
   );
 }
@@ -40,7 +40,7 @@ function Chevron({ open, onClick, label }: { open: boolean; onClick: () => void;
       onClick={onClick}
       aria-expanded={open}
       aria-label={`${open ? "Collapse" : "Expand"} ${label}`}
-      className="flex size-7 shrink-0 items-center justify-center rounded text-fg-muted hover:bg-surface-2 hover:text-fg"
+      className="flex size-9 shrink-0 items-center justify-center rounded-lg text-fg-muted transition-colors duration-150 hover:bg-surface-2 hover:text-fg"
     >
       <ChevronRight className={cn("size-4 transition-transform duration-[120ms]", open && "rotate-90")} aria-hidden />
     </button>
@@ -58,10 +58,11 @@ function TreeNode({ item, pathname }: { item: NavItem; pathname: string }) {
         href={item.href}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "block rounded-md px-3 py-1.5 text-[13px] leading-snug transition-colors duration-[120ms]",
+          "relative block rounded-md px-3 py-2 text-[13px] leading-snug transition-colors duration-150",
           active ? "bg-surface-2 font-semibold text-fg" : "text-fg-secondary hover:bg-surface-2 hover:text-fg",
         )}
       >
+        {active ? <span className="absolute inset-y-2 -left-[13px] w-[2px] rounded-full bg-accent" aria-hidden /> : null}
         {item.label}
       </Link>
     );
@@ -73,9 +74,9 @@ function TreeNode({ item, pathname }: { item: NavItem; pathname: string }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-left text-[13px] font-medium leading-snug text-fg-secondary hover:bg-surface-2 hover:text-fg"
+        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[13px] font-medium leading-snug text-fg transition-colors duration-150 hover:bg-surface-2"
       >
-        <ChevronRight className={cn("size-3.5 shrink-0 transition-transform duration-[120ms]", open && "rotate-90")} aria-hidden />
+        <ChevronRight className={cn("size-3.5 shrink-0 text-fg-muted transition-transform duration-150", open && "rotate-90")} aria-hidden />
         {item.label}
       </button>
       {open ? <SubTree items={item.children} pathname={pathname} /> : null}
@@ -85,7 +86,7 @@ function TreeNode({ item, pathname }: { item: NavItem; pathname: string }) {
 
 function SubTree({ items, pathname }: { items: NavItem[]; pathname: string }) {
   return (
-    <div className="ml-[22px] flex flex-col gap-0.5 border-l border-border pl-2">
+    <div className="ml-[22px] mt-1 mb-1 flex flex-col gap-1 border-l border-border pl-3">
       {items.map((child) => <TreeNode key={child.href} item={child} pathname={pathname} />)}
     </div>
   );
@@ -103,10 +104,10 @@ function NavEntry({ item, open }: { item: NavItem; open: boolean }) {
       href={item.href}
       aria-current={active ? "page" : undefined}
       title={open ? undefined : item.label}
-      className={cn(rowClass(active), "h-9 flex-1")}
+      className={cn(rowClass(active), "h-10 flex-1")}
     >
       <Marker active={active} />
-      {Icon ? <Icon className="size-4 shrink-0" aria-hidden /> : <span className="size-4 shrink-0" aria-hidden />}
+      {Icon ? <Icon className="size-6 shrink-0" aria-hidden /> : <span className="size-4 shrink-0" aria-hidden />}
       {open ? <span className="truncate">{item.label}</span> : <span className="sr-only">{item.label}</span>}
     </Link>
   );
@@ -116,7 +117,7 @@ function NavEntry({ item, open }: { item: NavItem; open: boolean }) {
   }
 
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col gap-1">
       <div className="flex items-center gap-1">
         {link}
         <Chevron open={expanded} onClick={() => setExpanded((e) => !e)} label={item.label} />
@@ -157,16 +158,16 @@ export function Sidebar() {
         )}
       </Link>
 
-      <nav aria-label="Main" className="flex flex-1 flex-col gap-6 overflow-y-auto p-3">
+      <nav aria-label="Main" className="flex flex-1 flex-col gap-8 overflow-y-auto px-3 py-5">
         <Suspense fallback={<NavSkeleton />}>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             {core.map((item) => <NavEntry key={item.href} item={item} open={open} />)}
           </div>
 
           {modules.map((m) => (
-            <div key={m.slug} className="flex flex-col gap-1">
+            <div key={m.slug} className="flex flex-col gap-3.5">
               {open ? (
-                <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-fg-muted">{m.label}</p>
+                <p className="px-3.5 pb-2 text-[13px] font-semibold uppercase tracking-wider text-fg-muted">{m.label}</p>
               ) : null}
               {(m.children ?? [{ label: m.label, href: m.href }]).map((item) => (
                 <NavEntry key={item.href} item={item} open={open} />

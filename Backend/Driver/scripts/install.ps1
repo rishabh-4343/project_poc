@@ -20,7 +20,7 @@ if (-not ($byModel -or $byMaker) -and -not $AllowPhysicalMachine) {
     throw "This does not look like a virtual machine (manufacturer '$($cs.Manufacturer)', model '$($cs.Model)'). Install only in a VM, or pass -AllowPhysicalMachine on a disposable test box."
 }
 
-if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrator')) {
+if (-not ([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))) {
     throw 'Run from an elevated PowerShell.'
 }
 

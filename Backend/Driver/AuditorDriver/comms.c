@@ -223,14 +223,15 @@ VOID CommsStop(VOID)
     }
 }
 
-NTSTATUS CommsSend(_In_reads_bytes_(bytes) PVOID message, ULONG bytes)
+NTSTATUS CommsSend(_In_reads_bytes_(bytes) PVOID message, ULONG bytes, ULONG waitMs)
 {
     LARGE_INTEGER timeout;
     NTSTATUS status;
 
-    /* A zero timeout means the send never waits for the agent: it succeeds only when an agent thread is already waiting in
-     * FilterGetMessage, otherwise the record is dropped and counted. The agent must keep several such reads outstanding. */
-    timeout.QuadPart = 0;
+    /* Waits up to waitMs for an agent thread to be waiting in FilterGetMessage (a relative timeout is negative, in 100 ns
+     * units). A nonzero wait is only allowed at PASSIVE_LEVEL: the only caller is the emit.c worker thread, never a file
+     * operation thread. STATUS_IO_TIMEOUT means nothing was delivered and the caller may try again. */
+    timeout.QuadPart = -(LONGLONG)waitMs * 10000;
 
     FltAcquirePushLockShared(&gPortLock);
     if (gClientPort == NULL) {

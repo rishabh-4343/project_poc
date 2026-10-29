@@ -1,19 +1,52 @@
 /* emit.c — D5: build records with the portable record.c, hand them to the agent over the port, and keep the counters.
- * Nothing here ever waits: a record the agent cannot take right now is counted as dropped and an overflow notice is
- * armed, to be sent with the next record that does get through. */
+ *
+ * The file-operation threads never wait: EmitRecord copies the finished record into a small bounded queue and returns.
+ * One system thread drains the queue and sends with a finite FltSendMessage timeout, so a record that arrives while the
+ * agent is between two reads (it may keep only one read outstanding) is retried for a moment instead of being lost.
+ * A record is counted as dropped only when the queue is full, no agent is connected, or the agent stays unresponsive; an
+ * overflow notice is then armed, to be sent with the next record that does get through. */
 #include "driver.h"
 #include "record.h"
 #include "driver_protocol.h"
 
+#define EMIT_QUEUE_MAX_COUNT    4096                    /* queued records */
+#define EMIT_QUEUE_MAX_BYTES    (16 * 1024 * 1024)      /* queued record bytes */
+#define EMIT_SEND_TRIES         5                       /* attempts per record, each waiting up to EMIT_SEND_WAIT_MS */
+#define EMIT_SEND_WAIT_MS       200
+
+typedef struct _EMIT_NODE {
+    LIST_ENTRY  Link;
+    ULONG       Bytes;
+    UCHAR       Data[1];
+} EMIT_NODE;
+
 static volatile LONG64 gSentTotal;
 static volatile LONG64 gDroppedTotal;
 static volatile LONG   gOverflowPending;
+
+static KSPIN_LOCK      gQueueLock;
+static LIST_ENTRY      gQueue;
+static ULONG           gQueueCount;
+static SIZE_T          gQueueBytes;
+static BOOLEAN         gAccepting;              /* guarded by gQueueLock */
+static KEVENT          gQueueEvent;             /* synchronization event: a record was queued, or stop was requested */
+static volatile LONG   gStop;
+static PETHREAD        gWorker;
 
 VOID EmitInit(VOID)
 {
     gSentTotal = 0;
     gDroppedTotal = 0;
     gOverflowPending = 0;
+
+    KeInitializeSpinLock(&gQueueLock);
+    InitializeListHead(&gQueue);
+    gQueueCount = 0;
+    gQueueBytes = 0;
+    gAccepting = FALSE;
+    gStop = 0;
+    gWorker = NULL;
+    KeInitializeEvent(&gQueueEvent, SynchronizationEvent, FALSE);
 }
 
 UINT64 EmitSentTotal(VOID)
@@ -40,6 +73,21 @@ VOID EmitNoteReconnect(VOID)
     }
 }
 
+/* Worker thread only. Waits a bounded time for the agent to post a read; gives up on a disconnected port at once. */
+static NTSTATUS SendWithRetry(_In_ PVOID message, ULONG bytes)
+{
+    NTSTATUS status = STATUS_IO_TIMEOUT;
+    ULONG attempt;
+
+    for (attempt = 0; attempt < EMIT_SEND_TRIES && !gStop; attempt++) {
+        status = CommsSend(message, bytes, EMIT_SEND_WAIT_MS);
+        if (status != STATUS_IO_TIMEOUT) {
+            break;
+        }
+    }
+    return status;
+}
+
 static VOID SendOverflowNotice(VOID)
 {
     AUDITOR_OVERFLOW_NOTICE notice;
@@ -50,19 +98,131 @@ static VOID SendOverflowNotice(VOID)
     notice.protocolVersion = AUDITOR_PROTOCOL_VERSION;
     notice.droppedTotal = EmitDroppedTotal();
 
-    if (!NT_SUCCESS(CommsSend(&notice, (ULONG)sizeof(notice)))) {
+    if (!NT_SUCCESS(SendWithRetry(&notice, (ULONG)sizeof(notice)))) {
         InterlockedExchange(&gOverflowPending, 1);      /* try again with the next record */
     }
 }
 
+static EMIT_NODE* QueuePop(VOID)
+{
+    EMIT_NODE* node = NULL;
+    KIRQL irql;
+
+    KeAcquireSpinLock(&gQueueLock, &irql);
+    if (!IsListEmpty(&gQueue)) {
+        node = CONTAINING_RECORD(RemoveHeadList(&gQueue), EMIT_NODE, Link);
+        gQueueCount--;
+        gQueueBytes -= node->Bytes;
+    }
+    KeReleaseSpinLock(&gQueueLock, irql);
+    return node;
+}
+
+static VOID EmitWorker(_In_ PVOID context)
+{
+    UNREFERENCED_PARAMETER(context);
+
+    for (;;) {
+        EMIT_NODE* node;
+
+        while (!gStop && (node = QueuePop()) != NULL) {
+            if (NT_SUCCESS(SendWithRetry(node->Data, node->Bytes))) {
+                InterlockedIncrement64(&gSentTotal);
+                if (InterlockedCompareExchange(&gOverflowPending, 0, 1) == 1) {
+                    SendOverflowNotice();
+                }
+            } else {
+                EmitCountDrop();
+            }
+            ExFreePoolWithTag(node, AUDITOR_POOL_TAG);
+        }
+        if (gStop) {
+            break;
+        }
+        KeWaitForSingleObject(&gQueueEvent, Executive, KernelMode, FALSE, NULL);
+    }
+    PsTerminateSystemThread(STATUS_SUCCESS);
+}
+
+NTSTATUS EmitStart(VOID)
+{
+    HANDLE thread = NULL;
+    NTSTATUS status;
+    KIRQL irql;
+
+    status = PsCreateSystemThread(&thread, THREAD_ALL_ACCESS, NULL, NULL, NULL, EmitWorker, NULL);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+    status = ObReferenceObjectByHandle(thread, SYNCHRONIZE, *PsThreadType, KernelMode, (PVOID*)&gWorker, NULL);
+    ZwClose(thread);
+    if (!NT_SUCCESS(status)) {
+        gStop = 1;                                      /* the worker cannot be waited for; let it exit on its own */
+        KeSetEvent(&gQueueEvent, IO_NO_INCREMENT, FALSE);
+        gWorker = NULL;
+        return status;
+    }
+
+    KeAcquireSpinLock(&gQueueLock, &irql);
+    gAccepting = TRUE;
+    KeReleaseSpinLock(&gQueueLock, irql);
+    return STATUS_SUCCESS;
+}
+
+/* Stops accepting records, waits for the worker to exit and frees whatever was still queued. Callbacks that are still
+ * running afterwards (until FltUnregisterFilter returns) find the queue closed and just count a drop. */
+VOID EmitShutdown(VOID)
+{
+    KIRQL irql;
+    EMIT_NODE* node;
+
+    KeAcquireSpinLock(&gQueueLock, &irql);
+    gAccepting = FALSE;
+    KeReleaseSpinLock(&gQueueLock, irql);
+
+    gStop = 1;
+    KeSetEvent(&gQueueEvent, IO_NO_INCREMENT, FALSE);
+    if (gWorker != NULL) {
+        KeWaitForSingleObject(gWorker, Executive, KernelMode, FALSE, NULL);
+        ObDereferenceObject(gWorker);
+        gWorker = NULL;
+    }
+
+    while ((node = QueuePop()) != NULL) {
+        ExFreePoolWithTag(node, AUDITOR_POOL_TAG);
+    }
+}
+
+/* Never waits and is safe at any IRQL up to DISPATCH_LEVEL: it only copies the record and queues it. */
 VOID EmitRecord(_In_reads_bytes_(bytes) const UCHAR* record, ULONG bytes)
 {
-    if (NT_SUCCESS(CommsSend((PVOID)record, bytes))) {
-        InterlockedIncrement64(&gSentTotal);
-        if (InterlockedCompareExchange(&gOverflowPending, 0, 1) == 1) {
-            SendOverflowNotice();
+    EMIT_NODE* node = NULL;
+    BOOLEAN queued = FALSE;
+    KIRQL irql;
+
+    if (bytes != 0 && bytes <= AUDITOR_MAX_RECORD_BYTES) {
+        node = (EMIT_NODE*)AudAlloc(FIELD_OFFSET(EMIT_NODE, Data) + bytes);
+    }
+    if (node != NULL) {
+        RtlCopyMemory(node->Data, record, bytes);
+        node->Bytes = bytes;
+
+        KeAcquireSpinLock(&gQueueLock, &irql);
+        if (gAccepting && gQueueCount < EMIT_QUEUE_MAX_COUNT && gQueueBytes + bytes <= EMIT_QUEUE_MAX_BYTES) {
+            InsertTailList(&gQueue, &node->Link);
+            gQueueCount++;
+            gQueueBytes += bytes;
+            queued = TRUE;
         }
+        KeReleaseSpinLock(&gQueueLock, irql);
+    }
+
+    if (queued) {
+        KeSetEvent(&gQueueEvent, IO_NO_INCREMENT, FALSE);
     } else {
+        if (node != NULL) {
+            ExFreePoolWithTag(node, AUDITOR_POOL_TAG);
+        }
         EmitCountDrop();
     }
 }

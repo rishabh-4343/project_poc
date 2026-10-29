@@ -42,11 +42,14 @@ BOOLEAN ScopeStateMatch(_In_reads_(chars) const WCHAR* path, SIZE_T chars);
 
 /* ---- emit.c: record transport to the agent ---------------------------------------------------------------------- */
 VOID    EmitInit(VOID);
+NTSTATUS EmitStart(VOID);                                           /* starts the sender thread; after EmitInit */
+VOID    EmitShutdown(VOID);                                         /* stops it and frees the queue; PASSIVE_LEVEL */
 UINT64  EmitSentTotal(VOID);
 UINT64  EmitDroppedTotal(VOID);
 VOID    EmitCountDrop(VOID);
 VOID    EmitNoteReconnect(VOID);
-/* Sends one finished record (never blocks); counts a drop and arms the overflow notice when it cannot be delivered. */
+/* Queues a copy of one finished record for the sender thread (never blocks, callable up to DISPATCH_LEVEL); counts a drop
+ * and arms the overflow notice when the record cannot be queued or later cannot be delivered. */
 VOID    EmitRecord(_In_reads_bytes_(bytes) const UCHAR* record, ULONG bytes);
 /* Build a record into a new pool block; the caller frees it with EmitFree. Returns NULL (and counts a drop) on failure. */
 PUCHAR  EmitBuild(
@@ -67,7 +70,8 @@ VOID    EmitGetSid(_In_opt_ PSECURITY_SUBJECT_CONTEXT subject, _Out_writes_(AUDI
 /* ---- comms.c: communication port ------------------------------------------------------------------------------- */
 NTSTATUS CommsStart(VOID);
 VOID     CommsStop(VOID);
-NTSTATUS CommsSend(_In_reads_bytes_(bytes) PVOID message, ULONG bytes);   /* zero-timeout FltSendMessage */
+/* FltSendMessage that waits up to waitMs; PASSIVE_LEVEL only (emit.c worker). STATUS_IO_TIMEOUT: nothing delivered. */
+NTSTATUS CommsSend(_In_reads_bytes_(bytes) PVOID message, ULONG bytes, ULONG waitMs);
 
 /* ---- capture.c: operation callbacks ---------------------------------------------------------------------------- */
 extern CONST FLT_OPERATION_REGISTRATION gOperationCallbacks[];

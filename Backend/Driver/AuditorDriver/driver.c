@@ -69,10 +69,20 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
         return status;
     }
 
+    status = EmitStart();
+    if (!NT_SUCCESS(status)) {
+        CommsStop();
+        FltUnregisterFilter(gFilter);
+        gFilter = NULL;
+        ScopeStateCleanup();
+        return status;
+    }
+
     /* Filtering starts last: the scope is empty until the agent sends one, so nothing is captured before then. */
     status = FltStartFiltering(gFilter);
     if (!NT_SUCCESS(status)) {
         CommsStop();
+        EmitShutdown();
         FltUnregisterFilter(gFilter);
         gFilter = NULL;
         ScopeStateCleanup();
@@ -88,8 +98,10 @@ NTSTATUS FilterUnload(_In_ FLT_FILTER_UNLOAD_FLAGS Flags)
 
     /* Close the port first so no new message arrives, then unregister: FltUnregisterFilter waits for callbacks that are
      * still running, and only after it returns is it safe to free what they use. A mandatory unload (shutdown) takes the
-     * same path; nothing needs draining because every record is sent as it is built. */
+     * same path. The sender thread is stopped (queued records are discarded) before the filter goes away, since it
+     * sends through gFilter; callbacks still running meanwhile find the queue closed and only count a drop. */
     CommsStop();
+    EmitShutdown();
     FltUnregisterFilter(gFilter);
     gFilter = NULL;
     ScopeStateCleanup();
