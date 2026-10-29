@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { createUiConnection } from "@/shared/signalr";
 import { wfsaApi } from "./api";
-import type { Agent, Session, SessionUpdate } from "./types";
+import type { Agent, ReportActionFilter, Session, SessionUpdate } from "./types";
 
 export const keys = {
   agents: ["wfsa", "agents"] as const,
@@ -16,6 +16,7 @@ export const keys = {
   dashboard: (days: number) => ["wfsa", "dashboard", days] as const,
   integrity: ["wfsa", "integrity"] as const,
   sessionIntegrity: (id: string) => ["wfsa", "integrity", "session", id] as const,
+  contentViews: (id: string) => ["wfsa", "reads", id] as const,
 };
 
 export const useAgents = () =>
@@ -26,6 +27,33 @@ export const useIntegrityEvents = (limit = 8) =>
 
 export const useSessionIntegrity = (id: string) =>
   useQuery({ queryKey: keys.sessionIntegrity(id), queryFn: () => wfsaApi.sessionIntegrity(id), refetchInterval: 15_000 });
+
+// Reads arrive in merged batches, not on the hub, so a recording session polls for them.
+export const useContentViews = (id: string, recording: boolean) =>
+  useQuery({
+    queryKey: keys.contentViews(id),
+    queryFn: () => wfsaApi.contentViews(id),
+    refetchInterval: recording ? 15_000 : false,
+  });
+
+// A predefined report's events, newest first, paged with "Load older".
+export const useReportActions = (slug: string, filter: ReportActionFilter | undefined, days: number) =>
+  useInfiniteQuery({
+    queryKey: ["wfsa", "report", slug, "actions", days],
+    queryFn: ({ pageParam }) => wfsaApi.reportActions(filter!, days, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled: Boolean(filter),
+    staleTime: 0,
+  });
+
+export const useReportReads = (slug: string, reads: { success: boolean } | undefined, days: number) =>
+  useQuery({
+    queryKey: ["wfsa", "report", slug, "reads", days],
+    queryFn: () => wfsaApi.reportReads(reads!.success, days),
+    enabled: Boolean(reads),
+    staleTime: 0,
+  });
 
 export const useServers = () => useQuery({ queryKey: keys.servers, queryFn: wfsaApi.servers });
 
@@ -81,6 +109,8 @@ export function useStopSession() {
     mutationFn: wfsaApi.stopSession,
     onSuccess: (session) => {
       qc.setQueryData(keys.session(session.id), session);
+      // The agent can answer before this response arrives, so the Completed push may already be overwritten; re-read it.
+      qc.invalidateQueries({ queryKey: keys.session(session.id) });
       return qc.invalidateQueries({ queryKey: keys.sessions });
     },
     onError: (e) => toast.error(e.message),

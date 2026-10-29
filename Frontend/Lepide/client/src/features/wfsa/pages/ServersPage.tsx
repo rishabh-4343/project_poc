@@ -104,7 +104,7 @@ export function ServersPage() {
   return (
     <div className="flex flex-col gap-6">
       <Reveal>
-        <PageHeader title="Servers" description="File servers that can be audited. A server must be approved before a session can run on it." actions={<RegisterServerDrawer />} />
+        <PageHeader title="Servers" description="File servers that can be audited. Approve a server before starting an audit on it." actions={<RegisterServerDrawer />} />
       </Reveal>
       <Reveal index={1}>
         {servers.isError ? (

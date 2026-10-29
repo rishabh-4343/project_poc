@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "sonner";
 import QueryProvider from "@/providers/query-provider";
 import { AppShell } from "@/shared/ui/app-shell";
+import { BRAND_NAME } from "@/shared/brand";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -16,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Auditor", template: "%s · Auditor" },
+  title: { default: BRAND_NAME, template: `%s · ${BRAND_NAME}` },
   description: "Data security auditing",
 };
 

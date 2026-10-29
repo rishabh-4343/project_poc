@@ -52,8 +52,9 @@ export function MetricCard({ label, value, previous, spark, tone = "accent" }: M
                 <Area
                   type="monotone"
                   dataKey="v"
-                  stroke={tone === "danger" ? "var(--danger)" : "var(--accent)"}
-                  fill={tone === "danger" ? "var(--danger-soft)" : "var(--accent-soft)"}
+                  stroke={tone === "danger" ? "var(--chart-2)" : "var(--chart-1)"}
+                  fill={tone === "danger" ? "var(--chart-2)" : "var(--chart-1)"}
+                  fillOpacity={0.1}
                   strokeWidth={1.5}
                   isAnimationActive={false}
                 />

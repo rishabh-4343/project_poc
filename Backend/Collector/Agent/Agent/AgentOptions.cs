@@ -24,8 +24,11 @@ public sealed class AgentOptions
 
     public int LogRetentionDays { get; set; } = 14;
 
-    // "Simulated" until the kernel driver exists; no other source is implemented yet.
+    // "Simulated" (default, software event generator) or "Real" (connect to the kernel driver's port).
     public string DriverSource { get; set; } = "Simulated";
+
+    // Driver communication port name; empty uses the protocol default (\\AuditorDriverPort).
+    public string DriverPortName { get; set; } = "";
 
     public int SimulatedIntervalMs { get; set; } = 500;
 

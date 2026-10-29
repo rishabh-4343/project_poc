@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { RefreshCw } from "lucide-react";
 import { API_URL } from "@/shared/config";
 import { useHealth } from "@/shared/hooks/use-health";
@@ -8,14 +9,21 @@ import { Button } from "@/shared/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Skeleton } from "@/shared/ui/skeleton";
 
+const noop = () => () => {};
+
 export function BackendStatusCard() {
-  const { data, isPending, isError, isFetching, refetch } = useHealth();
+  const health = useHealth();
+  const { data, isError, isFetching, refetch } = health;
+  // The top bar shares this query and usually has an answer before this card hydrates; render the server's skeleton
+  // until hydration is done so the markup matches.
+  const hydrated = useSyncExternalStore(noop, () => true, () => false);
+  const isPending = health.isPending || !hydrated;
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
-          <CardTitle>Backend</CardTitle>
+          <CardTitle>Audit service</CardTitle>
           {isPending ? (
             <Skeleton className="h-6 w-20" />
           ) : isError ? (
@@ -33,8 +41,8 @@ export function BackendStatusCard() {
           <Skeleton className="h-4 w-48" />
         ) : isError ? (
           <p className="text-sm text-fg-muted">
-            Can&apos;t reach the API. Start it with <span className="font-mono text-xs">dotnet run</span> in Backend/Auditing/server/server,
-            and check NEXT_PUBLIC_API_URL.
+            Can&apos;t reach the audit service. Check that it is running
+            and that this console points at the right address.
           </p>
         ) : (
           <p className="text-sm text-fg-muted tabular-nums">Last checked {data?.toLocaleTimeString()}</p>

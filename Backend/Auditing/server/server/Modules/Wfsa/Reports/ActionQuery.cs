@@ -22,7 +22,7 @@ public sealed class ActionFilter
 
 public static class ActionQuery
 {
-    private const string Columns =
+    internal const string Columns =
         "server_id, seq, toUnixTimestamp64Milli(occurred_at), object_type, operation, success, certainty, path, new_path, " +
         "share_name, actor_sid, actor_name, client_ip, process_name, old_security, new_security, content_type, risk_level, " +
         "compliance_tags, toString(monetary_value), details";
@@ -87,7 +87,7 @@ public static class ActionQuery
         return command;
     }
 
-    private static string PrefixClause(ClickHouseCommand command, string name, string path, bool recursive)
+    internal static string PrefixClause(ClickHouseCommand command, string name, string path, bool recursive)
     {
         var trimmed = path.Trim().TrimEnd('\\');
         command.AddParameter($"p{name}", trimmed);

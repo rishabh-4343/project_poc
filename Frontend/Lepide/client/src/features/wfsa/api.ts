@@ -3,10 +3,13 @@ import type {
   ActionFilters,
   ActionPage,
   Agent,
+  ContentViewReport,
   Dashboard,
   IntegrityEvent,
   NewSession,
   RegisteredAgent,
+  ReportActionFilter,
+  ReportPage,
   Server,
   Session,
   Share,
@@ -52,4 +55,19 @@ export const wfsaApi = {
 
   integrityEvents: (limit = 10) => api<IntegrityEvent[]>(`/api/wfsa/integrity-events?limit=${limit}`),
   sessionIntegrity: (id: string) => api<IntegrityEvent[]>(`/api/wfsa/sessions/${id}/integrity-events`),
+  contentViews: (id: string) => api<ContentViewReport>(`/api/wfsa/sessions/${id}/reads`),
+
+  reportActions: (f: ReportActionFilter, days: number, before?: string) => {
+    const p = new URLSearchParams({ operation: f.operations.join(","), days: String(days), limit: "200" });
+    if (f.success !== undefined) p.set("success", String(f.success));
+    if (f.objectTypes?.length) p.set("objectType", f.objectTypes.join(","));
+    if (f.scope) p.set("scope", f.scope);
+    if (before) p.set("before", before);
+    return api<ReportPage>(`/api/wfsa/reports/actions?${p}`);
+  },
+  reportReads: (success: boolean | undefined, days: number) => {
+    const p = new URLSearchParams({ days: String(days) });
+    if (success !== undefined) p.set("success", String(success));
+    return api<ContentViewReport>(`/api/wfsa/reports/reads?${p}`);
+  },
 };

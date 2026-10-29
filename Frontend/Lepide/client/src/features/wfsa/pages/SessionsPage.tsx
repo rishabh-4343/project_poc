@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Radio } from "lucide-react";
+import { FileBarChart, Plus, Radio } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { formatDateTime } from "@/shared/format";
 import { Button } from "@/shared/ui/button";
@@ -17,6 +17,7 @@ import { useServers, useSessions, useSessionUpdates } from "../hooks";
 import type { Session, SessionState } from "../types";
 
 const STATES: SessionState[] = ["Requested", "Starting", "Active", "Degraded", "Stopping", "Completed", "Failed"];
+const STATE_LABELS: Partial<Record<string, string>> = { Requested: "Pending", Degraded: "Needs attention" };
 
 export function SessionsPage() {
   const router = useRouter();
@@ -28,11 +29,11 @@ export function SessionsPage() {
   const host = new Map(servers.data?.map((s) => [s.id, s.hostName]));
 
   const columns: ColumnDef<Session>[] = [
-    { header: "Session", cell: ({ row }) => <span className="font-medium">{row.original.name || "Untitled session"}</span> },
+    { header: "Audit", cell: ({ row }) => <span className="font-medium">{row.original.name || "Untitled audit"}</span> },
     { header: "Server", cell: ({ row }) => host.get(row.original.serverId) ?? "—" },
-    { header: "State", cell: ({ row }) => <StatusBadge kind="session" value={row.original.state} /> },
+    { header: "Status", cell: ({ row }) => <StatusBadge kind="session" value={row.original.state} /> },
     {
-      header: "Scope",
+      header: "Folders",
       cell: ({ row }) => (
         <span className="font-mono text-xs text-fg-muted" title={row.original.folders.map((f) => f.localPath).join("\n")}>
           {row.original.folders[0]?.localPath}
@@ -40,8 +41,19 @@ export function SessionsPage() {
         </span>
       ),
     },
-    { header: "Operations", cell: ({ row }) => <span className="tabular-nums text-fg-muted">{row.original.operations.length}</span> },
-    { header: "Requested", cell: ({ row }) => <span className="text-fg-muted">{formatDateTime(row.original.requestedAt)}</span> },
+    { header: "Event types", cell: ({ row }) => <span className="tabular-nums text-fg-secondary">{row.original.operations.length}</span> },
+    { header: "Started", cell: ({ row }) => <span className="text-fg-secondary">{formatDateTime(row.original.requestedAt)}</span> },
+    {
+      header: "",
+      id: "open",
+      cell: ({ row }) => (
+        <Button size="sm" variant="secondary" asChild>
+          <Link href={`/wfsa/sessions/${row.original.id}`} onClick={(e) => e.stopPropagation()}>
+            <FileBarChart aria-hidden />Open report
+          </Link>
+        </Button>
+      ),
+    },
   ];
 
   const rows = (sessions.data ?? []).filter((s) => !state || s.state === state);
@@ -50,16 +62,16 @@ export function SessionsPage() {
     <div className="flex flex-col gap-6">
       <Reveal>
         <PageHeader
-          title="Sessions"
-          description="Each session watches folders on one server and records what happens in them."
-          actions={<Button asChild><Link href="/wfsa/sessions/new"><Plus aria-hidden />New session</Link></Button>}
+          title="Audits"
+          description="An audit records who changed what in the folders you choose on one server. Open an audit's report to see everything it recorded, live while it runs."
+          actions={<Button asChild><Link href="/wfsa/sessions/new"><Plus aria-hidden />New audit</Link></Button>}
         />
       </Reveal>
       <Reveal index={1} className="flex flex-col gap-4">
         <div className="max-w-xs">
-          <Select value={state} onChange={(e) => setState(e.target.value)} aria-label="Filter by state">
-            <option value="">All states</option>
-            {STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+          <Select value={state} onChange={(e) => setState(e.target.value)} aria-label="Filter by status">
+            <option value="">All statuses</option>
+            {STATES.map((s) => <option key={s} value={s}>{STATE_LABELS[s] ?? s}</option>)}
           </Select>
         </div>
         {sessions.isError ? (
@@ -74,9 +86,9 @@ export function SessionsPage() {
             empty={
               <EmptyState
                 icon={Radio}
-                title={state ? `No ${state.toLowerCase()} sessions` : "No sessions yet"}
-                description="Start a session to record file activity on a server and watch it live."
-                action={<Button asChild><Link href="/wfsa/sessions/new"><Plus aria-hidden />New session</Link></Button>}
+                title={state ? `No audits with status "${STATE_LABELS[state] ?? state}"` : "No audits yet"}
+                description={state ? "Choose another status to see more audits." : "Start an audit: pick a server, the folders to watch and what to record. Its report fills in as activity happens."}
+                action={state ? undefined : <Button asChild><Link href="/wfsa/sessions/new"><Plus aria-hidden />New audit</Link></Button>}
               />
             }
           />

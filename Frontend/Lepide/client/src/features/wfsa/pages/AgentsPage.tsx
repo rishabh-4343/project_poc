@@ -55,7 +55,7 @@ function AddAgentDrawer() {
       >
         {created ? (
           <div className="flex flex-1 flex-col gap-4">
-            <Field label="Agent key" hint="Set it on the server as the Agent__ApiKey environment variable.">
+            <Field label="Agent key" hint="Enter this key on the file server when you install the agent.">
               <div className="flex gap-2">
                 <Input readOnly value={created.apiKey} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
                 <Button type="button" variant="secondary" onClick={() => copy(created.apiKey)}>
@@ -135,7 +135,7 @@ export function AgentsPage() {
   return (
     <div className="flex flex-col gap-6">
       <Reveal>
-        <PageHeader title="Agents" description="Collectors installed on file servers. Status updates live." actions={<AddAgentDrawer />} />
+        <PageHeader title="Agents" description="The service installed on each file server that records activity. Status updates live." actions={<AddAgentDrawer />} />
       </Reveal>
       <Reveal index={1}>
         {isError ? (

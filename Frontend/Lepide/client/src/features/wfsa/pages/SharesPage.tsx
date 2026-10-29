@@ -92,7 +92,7 @@ export function SharesPage() {
   return (
     <div className="flex flex-col gap-6">
       <Reveal>
-        <PageHeader title="Shares" description="Shared folders on your servers, used to pick what a session watches." actions={<RegisterShareDrawer />} />
+        <PageHeader title="Shares" description="Shared folders on your servers. Add one to an audit in a single click." actions={<RegisterShareDrawer />} />
       </Reveal>
       <Reveal index={1} className="flex flex-col gap-4">
         <div className="max-w-xs">
@@ -109,7 +109,7 @@ export function SharesPage() {
             data={rows}
             getRowId={(s) => s.id}
             loading={shares.isPending}
-            empty={<EmptyState icon={FolderTree} title="No shares" description="Register a share so it can be added to a session in one click." />}
+            empty={<EmptyState icon={FolderTree} title="No shares" description="Register a share so it can be added to an audit in one click." />}
           />
         )}
       </Reveal>

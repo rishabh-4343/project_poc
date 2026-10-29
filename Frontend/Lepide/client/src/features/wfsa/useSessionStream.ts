@@ -5,10 +5,11 @@ import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { createUiConnection } from "@/shared/signalr";
 import { wfsaApi } from "./api";
 import { keys } from "./hooks";
-import type { ActionFilters, ActionRow, Session, SessionUpdate } from "./types";
+import type { ActionFilters, ActionRow, Agent, Session, SessionUpdate } from "./types";
 
 const CAP = 2000;
 const FRESH_MS = 1500;
+const TRAILING_MS = 10_000;
 
 const rowKey = (r: ActionRow) => `${r.serverId}:${r.seq}`;
 
@@ -39,6 +40,8 @@ export function useSessionStream(sessionId: string, filters: ActionFilters) {
     queryFn: ({ pageParam }) => wfsaApi.actions(sessionId, filters, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    // Live rows are dropped when the filters change, so going back to a filter set must re-read what was stored since.
+    staleTime: 0,
   });
 
   useEffect(() => {
@@ -77,6 +80,16 @@ export function useSessionStream(sessionId: string, filters: ActionFilters) {
     connection.on("SessionUpdated", (update: SessionUpdate) => {
       if (update.id !== sessionId) return;
       qc.setQueryData<Session>(keys.session(sessionId), (old) => (old ? { ...old, ...update } : old));
+      // The agent holds events for a few seconds (merge window + batch), so the last ones are stored after the stop
+      // and are no longer pushed; re-read the history once they have had time to land.
+      if (update.state === "Completed") {
+        timers.push(setTimeout(() => qc.invalidateQueries({ queryKey: ["wfsa", "actions", sessionId] }), TRAILING_MS));
+      }
+    });
+
+    // Agent presence drives the header's recording / paused state, so apply it as soon as it is pushed.
+    connection.on("AgentUpdated", (update: Agent) => {
+      qc.setQueryData<Agent[]>(keys.agents, (old) => old?.map((a) => (a.id === update.id ? { ...a, ...update } : a)));
     });
 
     connection.onreconnecting(() => setConnected(false));
